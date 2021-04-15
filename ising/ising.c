@@ -10,16 +10,28 @@
 
 /* Set these things by hand */
 
+
 #define INITIAL_TEMP 0 /*  0 => (T=0,  start)
                            1 => (T=oo, start)
 						   2 => (T=0,  strip geometry, start)  */
-#define MCS    400     /* Maximum time    */
-#define LENGTH 37      /* System size is LENGTH*LENGTH  */
+//#define MCS    800     /* Maximum time    */
+//#define LENGTH 57      /* System size is LENGTH*LENGTH  */
 #define Tc     2.2691853142130216092  /* Critical temperature */
-#define N      700		/* number of monte carlo samples */
-#define STEP   0.005   /* step taken between temperatures */
+//#define N      2000		/* number of monte carlo samples */
+//#define STEP   0.002   /* step taken between temperatures */
+
+#define MCS 550
+#define LENGTH 57
+#define N 1200
+#define STEP 0.003
 
 float TEMP = 2.5;  	/* Temperature in units of interaction and k_B */
+/* transition probabilities for the glauber rule, better to make them global, more efficient, don't have to compute tanh every time you update... */
+float glauber_p1;// = 0.5*(1-tanh(4/TEMP));
+float glauber_p2;// = 0.5*(1-tanh(2/TEMP));
+float glauber_p3;// = 0.5;
+float glauber_p4;// = 0.5*(1+tanh(2/TEMP));
+float glauber_p5;// = 0.5*(1+tanh(4/TEMP));
                        
 /* Subroutines for boundary conditions, initial conditions, 
    Monte Carlo moves, random number generator, and movie frames. */
@@ -27,6 +39,7 @@ float TEMP = 2.5;  	/* Temperature in units of interaction and k_B */
 void   initialize_boundary_conditions( int [] , int []);
 void   initialize_spin_configuration( int [][LENGTH]);
 void   mcmove( int[][LENGTH] , int [] , int [] );
+void	mcmove_glauber( int[][LENGTH], int [] , int [] );
 void   frame_xterm ( int [][LENGTH] );
 float  magnetization_per_spin( int[LENGTH][LENGTH]);
 double ran3( long int *);
@@ -78,13 +91,20 @@ int main()
 		frame_xterm(spin);
 	}
 
-	for (TEMP=2.5 ; TEMP>2.34; TEMP-=STEP){ // we need epsilon=0.03 or blow up in tau
+	for (TEMP=2.53 ; TEMP>2.35; TEMP-=STEP){ // we need epsilon=0.03 or blow up in tau
+		/* glauber rule probability updates (global variables) */
+		glauber_p1 = 0.5*(1-tanh(4/TEMP));
+		glauber_p2 = 0.5*(1-tanh(2/TEMP));
+		glauber_p3 = 0.5;
+		glauber_p4 = 0.5*(1+tanh(2/TEMP));
+		glauber_p5 = 0.5*(1+tanh(4/TEMP));
+ 
 		/* do N monte carlo simulations */
 		for (i=0; i<N; i++){
 			initialize_spin_configuration(spin);
 			mperspin_data[i][0] = magnetization_per_spin(spin);
 			for (itime=1;itime<MCS; itime++){
-				mcmove(spin, nbr1, nbr2);
+				mcmove_glauber(spin, nbr1, nbr2);
 				mperspin_data[i][itime] = magnetization_per_spin(spin);
 				if (verbose && itime % 100==0 && i % 1 == 0) {
 					printf("RUNNING...itime is %d, Temp is %fTc, @ %d'th simulation\n", itime, TEMP/Tc, i);
@@ -212,6 +232,47 @@ void frame_xterm( int spin[][LENGTH] ) {
       printf("\n");
    }
    printf("\n"); 
+}
+
+void mcmove_glauber( int spin[][LENGTH], int nbr1[] , int nbr2[]) {
+/*
+   ONE MONTE CARLO STEP by Metropolis: Flip probability 1 if Enew < Eold, 
+   else prob is exp -(Enew-Eold)/T.  Simplified here since only there 
+   are five cases in d=2 for external field = 0.
+   FLIP WITH prob1   prob2    1.0     1.0     1.0   (Below spins called)
+               +       -       -       -       -            ss1
+             + + +   + + +   + + -   + + -   - + -      ss2 ss0 ss4
+               +       +       +       -       -            ss3  
+*/
+
+  int i, ix, iy;
+  int ixpick, iypick;
+  int ss0, ss1, ss2, ss3, ss4, de;
+  double ran_no;
+  long int idum;
+  for (i = 1 ; i <= LENGTH*LENGTH ; i++) {
+	  ixpick = LENGTH * ran3(&idum) ; 
+	  iypick = LENGTH * ran3(&idum) ;  
+
+      ss0 = spin [ixpick]       [iypick]       ;     
+      ss1 = spin [nbr1[ixpick]] [iypick]       ;
+      ss2 = spin [ixpick]       [nbr1[iypick]] ;
+      ss3 = spin [nbr2[ixpick]] [iypick]       ;
+      ss4 = spin [ixpick]       [nbr2[iypick]] ;
+
+      de =  2*ss0*(ss1+ss2+ss3+ss4);
+
+		ran_no = ran3(&idum);
+		if ((de==8 && ran_no < glauber_p1) || 
+			(de==4 && ran_no < glauber_p2) ||
+			(de==0 && ran_no < glauber_p3) || 
+			(de==-4 && ran_no < glauber_p4) ||
+			(de==-8 && ran_no < glauber_p5))
+		{
+			spin[ixpick][iypick] *= -1;
+		}
+
+}
 }
 
 
