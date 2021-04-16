@@ -1,1 +1,5 @@
 *.ipynb
+brownian_motion/data/*
+*.npy
+ising/julia_playground/*
+ising/random_c/*
