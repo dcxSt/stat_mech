@@ -14,18 +14,13 @@
 #define INITIAL_TEMP 0 /*  0 => (T=0,  start)
                            1 => (T=oo, start)
 						   2 => (T=0,  strip geometry, start)  */
-//#define MCS    800     /* Maximum time    */
-//#define LENGTH 57      /* System size is LENGTH*LENGTH  */
-#define Tc     2.2691853142130216092  /* Critical temperature */
-//#define N      2000		/* number of monte carlo samples */
-//#define STEP   0.002   /* step taken between temperatures */
-
 #define MCS 550
-#define LENGTH 57
-#define N 1200
-#define STEP 0.003
+#define LENGTH 37
+#define Tc     2.2691853142130216092  /* Critical temperature */
+#define N 10
+#define STEP 0.005
 
-float TEMP = 2.5;  	/* Temperature in units of interaction and k_B */
+float TEMP = 2.4;  	/* Temperature in units of interaction and k_B */
 /* transition probabilities for the glauber rule, better to make them global, more efficient, don't have to compute tanh every time you update... */
 float glauber_p1;// = 0.5*(1-tanh(4/TEMP));
 float glauber_p2;// = 0.5*(1-tanh(2/TEMP));
@@ -36,42 +31,42 @@ float glauber_p5;// = 0.5*(1+tanh(4/TEMP));
 /* Subroutines for boundary conditions, initial conditions, 
    Monte Carlo moves, random number generator, and movie frames. */
 
-void   initialize_boundary_conditions( int [] , int []);
-void   initialize_spin_configuration( int [][LENGTH]);
-void   mcmove( int[][LENGTH] , int [] , int [] );
+void	initialize_boundary_conditions( int [] , int []);
+void	initialize_spin_configuration( int [][LENGTH]);
+void	mcmove( int[][LENGTH] , int [] , int [] );
 void	mcmove_glauber( int[][LENGTH], int [] , int [] );
-void   frame_xterm ( int [][LENGTH] );
-float  magnetization_per_spin( int[LENGTH][LENGTH]);
-double ran3( long int *);
+void	frame_xterm ( int [][LENGTH] );
+float	magnetization_per_spin( int[LENGTH][LENGTH]);
+double	ran3( long int *);
 
 int main() 
 {
 	int itime, i;
-	int spin[LENGTH][LENGTH];
-	int nbr1[LENGTH];
-	int nbr2[LENGTH];
+	int spin[LENGTH][LENGTH];	// the 2d grid of spins
+	int nbr1[LENGTH];		// used for boundary conditions
+	int nbr2[LENGTH];		// used for boundary conditions
 
-	float mperspin[MCS];
-	float mperspin_data[N][MCS];
-	float avg;
-	float mperspin_avg[MCS];
+	float mperspin[MCS];	// magnetization per spin at all times of a single run
+	float mperspin_data[N][MCS];	// large matrix of mag per spin
+	float avg;				// dummy variable, used when computing average mperspin / time
+	float mperspin_avg[MCS];	// mperspin_data averaged along 0 axis
 
 	long int iseed;      // random number stuff
 	float junk;
-
 	double runtime_seconds; 
-	int time_seed;
+	int time_seed;		// random number stuff
 	
-	bool verbose=false; // if verbose is set to false, program only outputs useful data, to be piped to a data file for analysis, otherwise it will run and make lots of print statements
+	bool verbose=false; // if verbose is set to false, program only outputs useful data, to be piped to a data file for analysis
+	// if verbose is set to true the script makes lots of print statements, for debugging purposes
 
 	// initiate seed with time in micro seconds
 	struct timeval start, stop;
 	gettimeofday(&start,NULL); // for the seed but also time the runtime
 	time_seed = (int)(-start.tv_usec) - (int)(1000000 * start.tv_sec);
-	if (time_seed%2==0) time_seed += 1; // martin requires a negative odd integer for iseed
+	if (time_seed%2==0) time_seed += 1; // needs to be negative odd integer, not sure why
 
-	//iseed = -12888333;   // any negative odd integer
-	iseed = time_seed;   // any negative odd integer
+	//iseed = -12888333;   // any negative odd integer (deterministic seed)
+	iseed = time_seed;   // any negative odd integer (time based seed)
 	junk = ran3(&iseed);  
 
 	/* Initialize cold (all magnetized T = 0), or, hot (random, T = oo), 
@@ -79,16 +74,13 @@ int main()
 	   interface fluctuations):  INITIAL_TEMP = 0 => (T=0)
 								 INITIAL_TEMP = 1 => (T=oo)
 								 INITIAL_TEMP = 2 => (T=0, strip) */
-	initialize_spin_configuration(spin);     
-
-	/* Boundary conditions (periodic) */
-	initialize_boundary_conditions(nbr1, nbr2);  
+	initialize_spin_configuration(spin);		// initial temp is zero, all spins up 
+	initialize_boundary_conditions(nbr1, nbr2);	// Boundary conditions (periodic) 
 
 	/* Start */
 	itime = 0;
 	if (verbose){
 		printf("START. itime is %d, Temp is %fTc \n", itime, TEMP/Tc);
-		frame_xterm(spin);
 	}
 
 	for (TEMP=2.53 ; TEMP>2.35; TEMP-=STEP){ // we need epsilon=0.03 or blow up in tau
@@ -99,7 +91,7 @@ int main()
 		glauber_p4 = 0.5*(1+tanh(2/TEMP));
 		glauber_p5 = 0.5*(1+tanh(4/TEMP));
  
-		/* do N monte carlo simulations */
+		// do N monte simulations 
 		for (i=0; i<N; i++){
 			initialize_spin_configuration(spin);
 			mperspin_data[i][0] = magnetization_per_spin(spin);
@@ -111,7 +103,7 @@ int main()
 				}
 			}
 		}
-		// average over all N simulations
+		// average over N simulations
 		for (itime=0; itime<MCS;itime++){
 			avg = 0;
 			for (i=0;i<N;i++){
@@ -131,7 +123,7 @@ int main()
 			runtime_seconds = (double)(stop.tv_sec - start.tv_sec) + (double)(stop.tv_usec - start.tv_usec)/1000000;
 			printf("\nRuntime in seconds %f\n",runtime_seconds);
 		}
-		else // just print the data, in csv format
+		else // just print the data, in csv format, first element of each row is the temp
 		{
 			printf("%f,",TEMP);
 			for (itime=0;itime<MCS-1;itime++){
@@ -157,9 +149,7 @@ float magnetization_per_spin ( int spin[LENGTH][LENGTH]){
 
 void initialize_boundary_conditions (int nbr1[], int nbr2[]){
 	int i;
-
-   /* Periodic boundary conditions */
-
+   // Periodic boundary conditions 
 	for (i = 0 ; i < LENGTH ; i++) { 
        nbr1[i] = i - 1;
        nbr2[i] = i + 1;
@@ -176,12 +166,11 @@ void initialize_spin_configuration( int spin[][LENGTH] ) {
 	int bottom_of_strip , top_of_strip;
  
 	if(INITIAL_TEMP==0) {
-   /* start magnetized all spins = 1 */
-
+   // start magnetized all spins = 1 
      for (ix = 0 ; ix < LENGTH; ix++) {  
-     for (iy = 0 ; iy < LENGTH; iy++) {
-	       spin[ix][iy] = 1;
-     }
+		 for (iy = 0 ; iy < LENGTH; iy++) {
+			spin[ix][iy] = 1;
+		 }
      }
  }
  else if(INITIAL_TEMP==1) {
@@ -215,31 +204,13 @@ void initialize_spin_configuration( int spin[][LENGTH] ) {
 	       spin[ix][iy] = -1;
 	   }
      }
-
- }
-}
-
-void frame_xterm( int spin[][LENGTH] ) {   
-  int ix , iy;
-  
-/* print to standard output one "frame" */
- 
-   for (iy = 0 ; iy < LENGTH; iy++) {
-      for (ix = 0 ; ix < LENGTH; ix++) {
-         if(spin[ix][iy] == 1 ) printf("* ");
-         else printf("  ");
-      }
-      printf("\n");
-   }
-   printf("\n"); 
+	}
 }
 
 void mcmove_glauber( int spin[][LENGTH], int nbr1[] , int nbr2[]) {
 /*
-   ONE MONTE CARLO STEP by Metropolis: Flip probability 1 if Enew < Eold, 
-   else prob is exp -(Enew-Eold)/T.  Simplified here since only there 
-   are five cases in d=2 for external field = 0.
-   FLIP WITH prob1   prob2    1.0     1.0     1.0   (Below spins called)
+   ONE MONTE CARLO STEP by Glauber:
+   FLIP WITH prob1   prob2    0.5    prob4   prob5   (Below spins called)
                +       -       -       -       -            ss1
              + + +   + + +   + + -   + + -   - + -      ss2 ss0 ss4
                +       +       +       -       -            ss3  
