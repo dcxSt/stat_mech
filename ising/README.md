@@ -1,8 +1,37 @@
 # Ising Model Simulations
 
-Results 
+## Quickstart
+Finds the average magnetization per spin over N simulations with MCS steps, outputs it to file.
 
-Note on table: for the same run I sometimes threw away data points, either because these data points belonged to regions of high variance (i.e. high temperature T), or because they where outliers. 
+- Open **ising.c** in your favourite text editor
+- Edit values to your hearts content (see **important parameters** section for values you can edit) 
+- Compile with `gcc ising.c -lm`
+- Run the code, if verbose is set to `false` you can pipe the data to a csv file `./a.out >> data.csv`, if verbose is set to `true` just run `./a.out`
+
+## The code
+
+The file *ising.c* contains code adapted from Martin Grant's *ising_2d_in_c.c*, the original code can be found in the *grant/* directory - it runs a single (deterministically seeded) monte carlo simulation and displays on a terminal checkerboard. My code runs many quasi random (time-based seed) simulations and outputs magnitization per spin data.
+
+#### important parameters
+- **N** is the number of simulations run per temperature
+- **verbose**, when this is set to true it outputs a running commentary on what is going on. When **verbose** is set to **false** the program outputs data which can be piped to a csv file. 
+- **MCS** is the number of trial runs
+- **LENGTH** is the sidelength of the square grid with periodic boundary conditions, for the results below, this was chosen to be 37, so the grid is a square (torus) 37x37
+- **Tc** the critical temperature is set to 2.2691853142130216092J/c, (approximately 2.269)
+- **STEP** gap between consecutive temperature values simulated
+- **cutoff** parameter to determine what 'late times' is, all data with *itime < cutoff* is ditched. It can be found in the *analysis....py* files. Is not part of ising.c! (all of the above are)
+
+The following pseudocode illustrates what the script does:
+
+```
+for a bunch of temperatures in	T low : STEP : T high
+	simulate N 2d ising models initiated with all spins up
+	for each timestep, average all the simulations' magnetization, print this to a file
+```
+
+## Results 
+
+Note: a few data points where discarded, either because these data points belonged to regions of high variance (i.e. high temperature T), or because they where outliers, or because the best fit algorithm for determining &tau; didn't converge. 
 
 |#|trial|N|MCS|#dta pts|cutoff|grid|A|&sigma;(A)|&mu;|&sigma;(&mu;)|Notes|
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -39,26 +68,6 @@ Note on table: for the same run I sometimes threw away data points, either becau
 |31|"      |"   |"  |58|150|"    |13.4|0.7|1.75|0.02|range T 2.35:2.53|
 |32|"      |"   |"  |60|200|"    |12.8|0.7|1.77|0.02|range T 2.35:2.53|
 
-## The code
-
-The file *ising.c* contains code adapted from Martin Grant's *ising_2d_in_c.c*, the original code can be found in the *grant/* directory - it runs a single (deterministically seeded) monte carlo simulation and displays on a terminal checkerboard. My code runs many quasi random (time-based seed) simulations.
-
-#### important parameters
-- **N** is the number of simulations run per temperatur
-- **verbose**, when this is set to true it outputs a running commentary on what is going on (for debugging purposes, mainly to track logic errors and check sanity because this is first time I write code in c)
-- **MCS** is the number of trial runs
-- **LENGTH** is the sidelength of the square grid with periodic boundary conditions, for the results below, this was chosen to be 37, so the grid is a square (torus) 37x37
-- **Tc** the critical temperature is set to 2.2691853142130216092J/c, (approximately 2.269)
-- **cutoff** parameter to determine what 'late times' is, all data with *itime < cutoff* is ditched. It can be found in *analysis1_ising.ipynb*. is not part of ising.c.
-
-When **verbose** is set to **false** the program outputs data which can be piped to a csv file. The following pseudocode illustrates what the script does:
-
-```
-for a bunch of temperatures in a range (Tc,Tc + epsilon)
-	simulate N 2d ising models initiated with all spins up
-	for each timestep, average all the simulations' magnetization, print this to a file
-```
-
 ## Discussion on Results
 
 The following results where generated using *ising.c* with parameters N=500, MCS=300, metropolis rule. To determine *A* and &mu; we first need to determine the time constant &tau; for each run. This was done using *scipy.optimize.curve_fit* to find the optimal value (that minimizes leaste squares error).  
@@ -68,13 +77,13 @@ These graphs correspond to row #1 in the table above.
 ![simulation averages 1](./figures/time_domain_simulation_metropolis_batch1.png)
 ![results 1](./figures/result_plot_1.png)
 
-These results are not good enough, we need to make it more accurate, i.e. more runs (higher N), longer runs (higher MCS), a higher cutoff (100 timesteps instead of 50) and perhaps we don't need results for time too close to Tc because it looks like when you get too near the blow up, the errors also blow up... Perhaps we could try a bigger board size...? Though 37 already seems fairly large...
+These results are not good enough, we need to make it more accurate, i.e. more simulations per average (N), longer runs (MCS), a higher cutoff (100-200 timesteps instead of 50) and perhaps we don't need results for time too close to Tc because it looks like when you get too near the blow up, the errors also blow up, and perhaps the transient domain encroaches more since the process is slower on the whole. Perhaps we could try a bigger board size.
 
 After some more tests we find some strikingly different results, as seen in the table above. I decided it was a good idea to scale the simulations some more and make them run overnight. To make sure that our results where not being contamenated by the transient domain, it was necessary to cut off the first 100 to 200 timesteps of each average run (much experimenting was done). 
 
-There are multiple complications: the temperature can't be too high, or the simulation average will fall to zero too quickly, as the average drops to zero the noise becomes large by comparison and contaminate our results so we cannot obain sensible values of &tau; for large T. When the temperature approaches the critical temperature (i.e. low T, but still higher than Tc!), the transient domain will be longer, so if we include low T data we must throw away a larger chunk of the first few timesteps (order of 100). This means we don't have a large window of temperature for which the estimates of &tau; are both accurate and precise.
+There are multiple complications: the temperature can't be too high, or the simulation average will fall to zero too quickly, as the average drops to zero the noise becomes large by comparison and contaminate our results so we cannot obain sensible values of &tau; for large T. When the temperature approaches the critical temperature (i.e. low T, but still higher than Tc!), the transient domain will be longer and may contaminate our results, so if we include low T data we must throw away a larger chunk of the first few timesteps (ballpark 100-200). This means we don't have a large window of temperature for which the estimates of &tau; are both accurate and precise.
 
-The folowing figures correspond to rows #12, #15 and #32 respectively (note #12 has incorrect title, 5 -> 6). Shown here
+The following figures correspond to rows #12, #15 and #32 respectively (note #12 has incorrect title, 5 -> 6 - sorry). Shown here
 
 |#|trial|N|MCS|#dta pts|cutoff|grid|A|&sigma;(A)|&mu;|&sigma;(&mu;)|Notes|
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -86,6 +95,6 @@ The folowing figures correspond to rows #12, #15 and #32 respectively (note #12 
 ![result 15](./figures/result_plot_7_overnight_large_board_cutoff200.png)
 ![result 32](./figures/result_plot_data_N1200_MCS550_STEP0003_glauber_boardsize37x37_all_cutoff200_cut_high_T.png)
 
-From these results we can say that the metropolis rule yields a value of A which is just under half that of the glauber rule, and a value for &mu; which is roughly equal to the glauber &mu;. This seems to indicate that the factor A depends on whether we use metropolis or glauber whereas &mu; is a property of the ising model which we measure and is about the same irrespective of the update method used, so long as the method makes physical sense. 
+From these results we can see that the metropolis rule yields a value of A which is roughly half that of the glauber rule, and a value for &mu; which is roughly equal to the glauber &mu;. This seems to indicate that the factor A depends on the simulation method used, whereas &mu; seems to be a property of the system. 
 
 
